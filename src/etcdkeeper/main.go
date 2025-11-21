@@ -8,19 +8,22 @@ import (
 	_ "etcdkeeper/session/providers/memory"
 	"flag"
 	"fmt"
-	"github.com/coreos/etcd/pkg/transport"
-	"go.etcd.io/etcd/client/v2"
-	"go.etcd.io/etcd/client/v3"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/coreos/etcd/pkg/transport"
+	"go.etcd.io/etcd/client/v2"
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 var (
@@ -49,7 +52,7 @@ type userInfo struct {
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	host := flag.String("h", "0.0.0.0", "host name or ip address")
+	host := flag.String("h", "127.0.0.1", "host name or ip address")
 	port := flag.Int("p", 8080, "port")
 
 	flag.CommandLine.Parse(os.Args[1:])
@@ -100,7 +103,16 @@ func main() {
 
 	http.Handle("/", http.FileServer(http.Dir(rootPath+"/assets"))) // view static directory
 
-	log.Printf("listening on %s:%d\n", *host, *port)
+	log.Printf("listening on http://%s:%d/etcdkeeper/\n", *host, *port)
+
+	// try to open default browser to the UI
+	go func() {
+		// give server a moment to start
+		time.Sleep(300 * time.Millisecond)
+		url := fmt.Sprintf("http://%s:%d/etcdkeeper/", *host, *port)
+		_ = openBrowser(url)
+	}()
+
 	err = http.ListenAndServe(*host+":"+strconv.Itoa(*port), nil)
 	if err != nil {
 		log.Fatal(err)
@@ -1118,4 +1130,17 @@ func getInfo(host string) map[string]string {
 
 func size(num int, unit int) (n, rem int) {
 	return num / unit, num - (num/unit)*unit
+}
+
+// openBrowser opens the provided URL in the default browser (cross-platform).
+func openBrowser(url string) error {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", url).Start()
+	case "windows":
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	default:
+		// Assume Linux or other Unix-like OS with xdg-open available
+		return exec.Command("xdg-open", url).Start()
+	}
 }
